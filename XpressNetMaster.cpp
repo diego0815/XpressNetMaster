@@ -1,7 +1,7 @@
 /*
 *****************************************************************************
   *		XpressNetMaster.h - library for XpressNet protocoll
-  *		Copyright (c) 08/2016 - 2023 Philipp Gahtow  All right reserved.
+  *		Copyright (c) 08/2016 - 2022 Philipp Gahtow  All right reserved.
   *
 *****************************************************************************
   * FUNKTIONS:
@@ -33,9 +33,10 @@
 #include <avr/interrupt.h>
 XpressNetMasterClass *XpressNetMasterClass::active_object = 0;	//Static
 
-#elif defined(ESP8266) || defined(ESP32)
-#include <SoftwareSerial.h>
-SoftwareSerial XNetSwSerial;
+#elif defined(ESP8266) || defined(ESP32_MCU) || defined(CONFIG_IDF_TARGET_ESP32C3)
+  #define ESP32_MCU
+  #include <SoftwareSerial.h> // EspSoftwareSerial by Dirk Kaar, Peter Lerup
+  SoftwareSerial XNetSwSerial;
 #endif
 
 // Constructor /////////////////////////////////////////////////////////////////
@@ -77,10 +78,10 @@ XpressNetMasterClass::XpressNetMasterClass()
 }
 
 //******************************************Serial*******************************************
-#if defined(ESP8266) || defined(ESP32)
-void XpressNetMasterClass::setup(uint8_t FStufen, uint8_t  XNetPort, uint8_t  XControl, bool XnModeAuto)  //Initialisierung Serial
+#if defined(ESP8266) || defined(ESP32_MCU)
+  void XpressNetMasterClass::setup(uint8_t FStufen, uint8_t  XNetPort, uint8_t  XControl, bool XnModeAuto)  //Initialisierung Serial
 #else
-void XpressNetMasterClass::setup(uint8_t FStufen, uint8_t  XControl, bool XnModeAuto)  //Initialisierung Serial
+  void XpressNetMasterClass::setup(uint8_t FStufen, uint8_t  XControl, bool XnModeAuto)  //Initialisierung Serial
 #endif
 {
 	Fahrstufe = FStufen;
@@ -127,18 +128,16 @@ void XpressNetMasterClass::setup(uint8_t FStufen, uint8_t  XControl, bool XnMode
 	 */
 	active_object = this;		//hold Object to call it back in ISR
 	 
-#elif defined(ESP8266) || defined(ESP32) 
+#elif defined(ESP8266) || defined(ESP32_MCU)
 	XNetSwSerial.begin(62500, SWSERIAL_8S1, XNetPort, XNetPort, false, 95); //One Wire Half Duplex Serial, parity mode SPACE
 	if (!XNetSwSerial) { // If the object did not initialize, then its configuration is invalid
 		Serial.println("Invalid SoftwareSerial pin configuration, check config"); 
 		while (1) { // Don't continue with invalid configuration
 		delay (1000);
 		}
-	}
-	
-	/* At high bitrates (115200bps) send bit timing can be improved at the expense of blocking concurrent full duplex receives, 
-	with the EspSoftwareSerial::UART::enableIntTx(false) function call.*/
-	XNetSwSerial.enableIntTx(true);	// high speed half duplex, don't turn off interrupts during tx!
+	} 
+	// high speed half duplex, turn off interrupts during tx
+	XNetSwSerial.enableIntTx(false);
 	
 /*	Remove to make the start up faster because of multiMaus V2-00!!!
 	//wait to make the library work before first messages will be send!
@@ -161,7 +160,7 @@ bool XpressNetMasterClass::update(void)
 {
 	bool status = false; 		//nothing to do!
 	
-	#if defined(ESP8266) || defined(ESP32)
+	#if defined(ESP8266) || defined(ESP32_MCU)
 	//Check if we have data available for receive:
 	XNetReceive();	
 	#endif
@@ -587,14 +586,12 @@ void XpressNetMasterClass::XNetAnalyseReceived(void) {		//work on received data
 			else if ((XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetheader] & 0xF0) == 0x40) {
 				//Rückmeldung Schaltinformation
 				byte len = (XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetheader] & 0x0F) / 2;	//each Adr and Data
-				if(notifyXNetFeedback) {
-					for (byte i = 1; i <= len; i++) {
-						notifyXNetFeedback((XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetheader+(i*2)-1] << 2) | ((XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetheader+(i*2)] & B110) >> 1), XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetheader+(i*2)]);
+				for (byte i = 1; i <= len; i++) {
+					notifyXNetFeedback((XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetheader+(i*2)-1] << 2) | ((XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetheader+(i*2)] & B110) >> 1), XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetheader+(i*2)]);
 					//XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata2] = 0000 ABBP
 					//A = Weichenausgang(Spulenspannung EIN/AUS)
 					//BB = Adresse des Dekoderport 1..4
 					//P = Ausgang (Gerade = 0 / Abzweigen = 1)
-					}
 				}
 			}
 			else if (XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetheader] == 0x05 && XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata1] == 0xF1) {
@@ -1239,7 +1236,7 @@ void XpressNetMasterClass::XNetSendNext(void) {
 		//STOP sending data, we are requested to send only one packet!
 		//nothing less to send out.
 		digitalWrite(MAX485_CONTROL, LOW); 	//RECEIVE_MODE
-		#if defined(ESP8266) || defined(ESP32)
+		#if defined(ESP8266) || defined(ESP32_MCU)
 			XNetSwSerial.enableTx(false);
 		#endif
 		return;
@@ -1255,7 +1252,7 @@ void XpressNetMasterClass::XNetSendData(void) {
 	if (data9 > 0x1FF) {	//no data
 		//nothing less to send out.
 		digitalWrite(MAX485_CONTROL, LOW); 	//RECEIVE_MODE
-		#if defined(ESP8266) || defined(ESP32)
+		#if defined(ESP8266) || defined(ESP32_MCU)
 			XNetSwSerial.enableTx(false);
 		#endif
 		
@@ -1291,7 +1288,7 @@ void XpressNetMasterClass::XNetSendData(void) {
 			UDR1 = data9;
 		#endif
 		
-	#elif defined(ESP8266) || defined(ESP32)
+	#elif defined(ESP8266) || defined(ESP32_MCU)
 		
 		XNetSwSerial.enableTx(true);
 
@@ -1436,7 +1433,7 @@ void XpressNetMasterClass::XNetReceive(void)
 				XNetRXBuffer.msg[XNetRXBuffer.put].data[XNetRXBuffer.msg[XNetRXBuffer.put].length] = UDR1;                   // Zeichen aus UDR an Aufrufer zurueckgeben
 			}
 		#endif
-	#elif defined(ESP8266) || defined(ESP32)
+	#elif defined(ESP8266) || defined(ESP32_MCU)
 		if (XNetSwSerial.available()) {      // If anything comes in Serial
 			uint8_t data = XNetSwSerial.read();
 			if (XNetSwSerial.readParity()) {   //detect parity bit set on the last message (MARK parity)
