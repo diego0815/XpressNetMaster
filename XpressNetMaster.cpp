@@ -1,7 +1,7 @@
 /*
 *****************************************************************************
   *		XpressNetMaster.h - library for XpressNet protocoll
-  *		Copyright (c) 08/2016 - 2022 Philipp Gahtow  All right reserved.
+  *		Copyright (c) 08/2016 - 2023 Philipp Gahtow  All right reserved.
   *
 *****************************************************************************
   * FUNKTIONS:
@@ -135,9 +135,11 @@ XpressNetMasterClass::XpressNetMasterClass()
 		while (1) { // Don't continue with invalid configuration
 		delay (1000);
 		}
-	} 
-	// high speed half duplex, turn off interrupts during tx
-	XNetSwSerial.enableIntTx(false);
+	}
+	/* At high bitrates (115200bps) send bit timing can be improved at the expense of blocking concurrent full duplex receives,
+	   with the EspSoftwareSerial::UART::enableIntTx(false) function call.
+	 */
+	XNetSwSerial.enableIntTx(true);	// high speed half duplex, don't turn off interrupts during tx!
 	
 /*	Remove to make the start up faster because of multiMaus V2-00!!!
 	//wait to make the library work before first messages will be send!
@@ -586,12 +588,14 @@ void XpressNetMasterClass::XNetAnalyseReceived(void) {		//work on received data
 			else if ((XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetheader] & 0xF0) == 0x40) {
 				//Rückmeldung Schaltinformation
 				byte len = (XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetheader] & 0x0F) / 2;	//each Adr and Data
-				for (byte i = 1; i <= len; i++) {
-					notifyXNetFeedback((XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetheader+(i*2)-1] << 2) | ((XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetheader+(i*2)] & B110) >> 1), XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetheader+(i*2)]);
-					//XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata2] = 0000 ABBP
-					//A = Weichenausgang(Spulenspannung EIN/AUS)
-					//BB = Adresse des Dekoderport 1..4
-					//P = Ausgang (Gerade = 0 / Abzweigen = 1)
+				if(notifyXNetFeedback) {
+					for (byte i = 1; i <= len; i++) {
+						notifyXNetFeedback((XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetheader+(i*2)-1] << 2) | ((XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetheader+(i*2)] & B110) >> 1), XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetheader+(i*2)]);
+						//XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata2] = 0000 ABBP
+						//A = Weichenausgang(Spulenspannung EIN/AUS)
+						//BB = Adresse des Dekoderport 1..4
+						//P = Ausgang (Gerade = 0 / Abzweigen = 1)
+					}
 				}
 			}
 			else if (XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetheader] == 0x05 && XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata1] == 0xF1) {
